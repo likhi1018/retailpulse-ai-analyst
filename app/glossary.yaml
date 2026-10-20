@@ -1,0 +1,41 @@
+# Business definitions the model must follow. These encode the decisions made in
+# RetailPulse's data-quality work, so generated SQL matches the official numbers.
+
+currency: "All money is in Brazilian reais (R$)."
+
+tables:
+  fact_sales: "One row per order item, delivered orders only. Use for revenue, freight, product, category and seller questions."
+  fact_orders: "One row per order, ALL statuses. Use for order status, cancellations, delivery time, lateness, reviews and payments."
+  dim_customer: "One row per real customer (customer_unique_id)."
+  dim_product: "One row per product. Use the English `category` column, not category_pt."
+  dim_seller: "One row per seller."
+  dim_geography: "One row per Brazilian state, with state_name and region."
+  dim_date: "Calendar table. Join on date_key (integer YYYYMMDD)."
+  customer_rfm: "RFM scores and segment per customer with at least one delivered order."
+  cohort_retention: "Monthly cohort retention matrix (cohort_month x month_index)."
+
+relationships:
+  - "fact_sales.date_key = dim_date.date_key"
+  - "fact_orders.date_key = dim_date.date_key"
+  - "fact_sales.customer_key = dim_customer.customer_key"
+  - "fact_orders.customer_key = dim_customer.customer_key"
+  - "fact_sales.product_key = dim_product.product_key"
+  - "fact_sales.seller_key = dim_seller.seller_key"
+  - "dim_customer.state_code = dim_geography.state_code"
+  - "customer_rfm.customer_key = dim_customer.customer_key"
+
+metrics:
+  revenue: "SUM(fact_sales.price). Do not include freight unless asked."
+  orders: "COUNT(DISTINCT fact_sales.order_id) for delivered orders; use fact_orders when the question is about all orders or statuses."
+  average order value (AOV): "SUM(fact_sales.price) / COUNT(DISTINCT fact_sales.order_id)"
+  customers: "Count dim_customer.customer_key (or DISTINCT customer_key). Never count order-level customer ids."
+  repeat customers: "dim_customer.customer_type = 'Repeat'"
+  late delivery rate: "AVG(fact_orders.is_late) over delivered orders (is_delivered = 1)."
+  average review score: "AVG(fact_orders.review_score)"
+  freight share: "SUM(freight_value) / SUM(price)"
+
+rules:
+  - "Monthly trends: group by dim_date.year_month. Partial months exist at the edges of the data (before 2017-01 and after 2018-08); exclude them for trend questions unless asked."
+  - "Percentages: return as 0-100 numbers rounded to 1 decimal place."
+  - "Money: round to 2 decimal places."
+  - "Region values are: North, Northeast, Central-West, Southeast, South."

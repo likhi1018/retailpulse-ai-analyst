@@ -1,0 +1,195 @@
+# Benchmark for execution accuracy: a model answer is correct when its result set
+# matches the gold query's result set (values compared, column names ignored).
+# Several gold answers are the headline numbers in the RetailPulse README.
+
+- id: q01
+  category: aggregation
+  question: What is total revenue from delivered orders?
+  gold: SELECT ROUND(SUM(price), 2) AS revenue FROM fact_sales
+
+- id: q02
+  category: aggregation
+  question: How many delivered orders are there, and what is the average order value?
+  gold: |
+    SELECT COUNT(DISTINCT order_id) AS orders,
+           ROUND(SUM(price) / COUNT(DISTINCT order_id), 2) AS aov
+    FROM fact_sales
+
+- id: q03
+  category: aggregation
+  question: How many orders were canceled (including unavailable)?
+  gold: SELECT SUM(is_canceled) AS canceled_orders FROM fact_orders
+
+- id: q04
+  category: time
+  question: What was total revenue in each year?
+  gold: |
+    SELECT d.year, ROUND(SUM(s.price), 2) AS revenue
+    FROM fact_sales s JOIN dim_date d ON d.date_key = s.date_key
+    GROUP BY d.year ORDER BY d.year
+
+- id: q05
+  category: time
+  question: Which month had the highest revenue?
+  gold: |
+    SELECT d.year_month, ROUND(SUM(s.price), 2) AS revenue
+    FROM fact_sales s JOIN dim_date d ON d.date_key = s.date_key
+    GROUP BY d.year_month ORDER BY revenue DESC LIMIT 1
+
+- id: q06
+  category: time
+  question: Show the number of delivered orders per month in 2018 (January to August).
+  gold: |
+    SELECT d.year_month, COUNT(DISTINCT s.order_id) AS orders
+    FROM fact_sales s JOIN dim_date d ON d.date_key = s.date_key
+    WHERE d.year_month BETWEEN '2018-01' AND '2018-08'
+    GROUP BY d.year_month ORDER BY d.year_month
+
+- id: q07
+  category: window
+  question: What was revenue growth from January-August 2017 to January-August 2018, in percent?
+  gold: |
+    WITH r AS (
+      SELECT SUM(CASE WHEN d.year = 2017 THEN s.price END) AS r2017,
+             SUM(CASE WHEN d.year = 2018 THEN s.price END) AS r2018
+      FROM fact_sales s JOIN dim_date d ON d.date_key = s.date_key
+      WHERE d.month_num BETWEEN 1 AND 8
+    )
+    SELECT ROUND(100 * (r2018 / r2017 - 1), 1) AS growth_pct FROM r
+
+- id: q08
+  category: ranking
+  question: What are the top 5 product categories by revenue?
+  gold: |
+    SELECT p.category, ROUND(SUM(s.price), 2) AS revenue
+    FROM fact_sales s JOIN dim_product p ON p.product_key = s.product_key
+    GROUP BY p.category ORDER BY revenue DESC LIMIT 5
+
+- id: q09
+  category: ranking
+  question: Which 3 product categories sold the most items?
+  gold: |
+    SELECT p.category, COUNT(*) AS items_sold
+    FROM fact_sales s JOIN dim_product p ON p.product_key = s.product_key
+    GROUP BY p.category ORDER BY items_sold DESC LIMIT 3
+
+- id: q10
+  category: ranking
+  question: Which 5 seller states generate the most revenue?
+  gold: |
+    SELECT se.state_code, ROUND(SUM(s.price), 2) AS revenue
+    FROM fact_sales s JOIN dim_seller se ON se.seller_key = s.seller_key
+    GROUP BY se.state_code ORDER BY revenue DESC LIMIT 5
+
+- id: q11
+  category: joins
+  question: What is revenue by customer region?
+  gold: |
+    SELECT c.region, ROUND(SUM(s.price), 2) AS revenue
+    FROM fact_sales s JOIN dim_customer c ON c.customer_key = s.customer_key
+    GROUP BY c.region ORDER BY revenue DESC
+
+- id: q12
+  category: joins
+  question: What is freight as a percentage of revenue for each customer region?
+  gold: |
+    SELECT c.region, ROUND(100 * SUM(s.freight_value) / SUM(s.price), 1) AS freight_pct
+    FROM fact_sales s JOIN dim_customer c ON c.customer_key = s.customer_key
+    GROUP BY c.region ORDER BY freight_pct DESC
+
+- id: q13
+  category: joins
+  question: What is the average order value for customers in each region?
+  gold: |
+    SELECT c.region, ROUND(SUM(s.price) / COUNT(DISTINCT s.order_id), 2) AS aov
+    FROM fact_sales s JOIN dim_customer c ON c.customer_key = s.customer_key
+    GROUP BY c.region ORDER BY aov DESC
+
+- id: q14
+  category: customers
+  question: What percentage of customers with a delivered order are repeat customers?
+  gold: |
+    SELECT ROUND(100 * AVG(CASE WHEN customer_type = 'Repeat' THEN 1.0 ELSE 0 END), 1) AS repeat_pct
+    FROM dim_customer WHERE delivered_orders >= 1
+
+- id: q15
+  category: customers
+  question: How many customers are in each RFM segment?
+  gold: |
+    SELECT segment, COUNT(*) AS customers
+    FROM customer_rfm GROUP BY segment ORDER BY segment
+
+- id: q16
+  category: customers
+  question: What share of total revenue comes from each RFM segment?
+  gold: |
+    SELECT segment, ROUND(100 * SUM(monetary) / SUM(SUM(monetary)) OVER (), 1) AS revenue_share_pct
+    FROM customer_rfm GROUP BY segment ORDER BY segment
+
+- id: q17
+  category: customers
+  question: What is the average spend of repeat customers versus one-time customers?
+  gold: |
+    SELECT c.customer_type, ROUND(AVG(r.monetary), 2) AS avg_spend
+    FROM customer_rfm r JOIN dim_customer c ON c.customer_key = r.customer_key
+    GROUP BY c.customer_type ORDER BY c.customer_type
+
+- id: q18
+  category: delivery
+  question: What percentage of delivered orders arrived late?
+  gold: SELECT ROUND(100 * AVG(is_late), 1) AS late_pct FROM fact_orders WHERE is_delivered = 1
+
+- id: q19
+  category: delivery
+  question: What is the average review score for each delivery delay bucket?
+  gold: |
+    SELECT delay_bucket, ROUND(AVG(review_score), 2) AS avg_review
+    FROM fact_orders WHERE is_delivered = 1 AND delay_bucket IS NOT NULL
+    GROUP BY delay_bucket ORDER BY delay_bucket
+
+- id: q20
+  category: delivery
+  question: Which 5 customer states have the highest late delivery rate?
+  gold: |
+    SELECT state_code, ROUND(100 * AVG(is_late), 1) AS late_pct
+    FROM fact_orders WHERE is_delivered = 1
+    GROUP BY state_code ORDER BY late_pct DESC LIMIT 5
+
+- id: q21
+  category: delivery
+  question: What is the average delivery time in days by customer region?
+  gold: |
+    SELECT g.region, ROUND(AVG(o.delivery_days), 1) AS avg_delivery_days
+    FROM fact_orders o JOIN dim_geography g ON g.state_code = o.state_code
+    WHERE o.is_delivered = 1
+    GROUP BY g.region ORDER BY avg_delivery_days DESC
+
+- id: q22
+  category: delivery
+  question: What share of all 1-2 star reviews come from late orders?
+  gold: |
+    SELECT ROUND(100 * SUM(CASE WHEN is_late = 1 THEN 1 ELSE 0 END) / COUNT(*), 1) AS late_share_of_bad_reviews_pct
+    FROM fact_orders WHERE is_delivered = 1 AND review_score <= 2
+
+- id: q23
+  category: payments
+  question: How many orders used each main payment type?
+  gold: |
+    SELECT main_payment_type, COUNT(*) AS orders
+    FROM fact_orders WHERE main_payment_type IS NOT NULL
+    GROUP BY main_payment_type ORDER BY orders DESC
+
+- id: q24
+  category: window
+  question: What percentage of customers in each cohort were active one month after their first purchase, for 2017 cohorts?
+  gold: |
+    SELECT cohort_month, retention_pct
+    FROM cohort_retention
+    WHERE month_index = 1 AND cohort_month BETWEEN DATE '2017-01-01' AND DATE '2017-12-01'
+    ORDER BY cohort_month
+
+- id: q25
+  category: unanswerable
+  question: What was the profit margin on each category?
+  gold: |
+    SELECT 'Not answerable with this data: no product cost is available' AS message
